@@ -1,0 +1,162 @@
+defaultPodOptions:
+  nodeSelector:
+    location: homelab
+    bluetooth: available
+  securityContext:
+    fsGroup: 1000
+controllers:
+  main:
+    annotations:
+      reloader.stakater.com/auto: "true"
+    pod:
+      hostNetwork: true
+      #? might be needed for bluetooth to actually work
+      # securityContext:
+      #   privileged: true
+    containers:
+      main:
+        image:
+          repository: ghcr.io/home-assistant/home-assistant # {"$imagepolicy": "flux-system:home-assistant:name"}
+          tag: '2024.1.5' # {"$imagepolicy": "flux-system:home-assistant:tag"}
+        env:
+          PUID: '1000'
+          PGID: '1000'
+          TZ: Europe/Vienna
+    initContainers:
+      init:
+        image:
+          repository: docker.io/busybox
+          tag: "latest"
+        command: ["/bin/sh"]
+        args:
+        - "-c"
+        - "cd /config && touch customize.yaml && mkdir -p themes packages"
+  code:
+    annotations:
+      reloader.stakater.com/auto: "true"
+    containers:
+      main:
+        image:
+          repository: ghcr.io/linuxserver/code-server # {"$imagepolicy": "flux-system:code-server:name"}
+          tag: '4.20.0' # {"$imagepolicy": "flux-system:code-server:tag"}
+        env:
+          PUID: '1000'
+          PGID: '1000'
+          TZ: 'Europe/Vienna'
+          DEFAULT_WORKSPACE: '/data'
+          DOCKER_MODS: 'linuxserver/mods:universal-package-install'
+          INSTALL_PACKAGES: 'fish|vim|build-essential|unzip|python3-pip|python3-venv|git-lfs'
+        envFrom:
+        - secretRef:
+            name: code-sudo
+persistence:
+  config:
+    enabled: true
+    type: persistentVolumeClaim
+    size: 1Gi
+    storageClass: local-path
+    accessMode: ReadWriteOnce
+    globalMounts: []
+    advancedMounts:
+      main: #controller
+        init:
+        - path: /config
+        main:
+        - path: /config
+      code:
+        main:
+        - path: /data
+  hass-secrets:
+    enabled: true
+    type: secret
+    name: hass-secrets
+    advancedMounts:
+      main: #controller
+        main:
+        - path: /config/secrets.yaml
+          readOnly: true
+          subPath: secrets.yaml
+  hass-base-config:
+    enabled: true
+    type: configMap
+    name: hass-configuration
+    advancedMounts:
+      main: #controller
+        main:
+        - path: /config/configuration.yaml
+          readOnly: true
+          subPath: configuration.yaml
+      code:
+        main:
+        - path: /data/configuration.yaml
+          readOnly: true
+          subPath: configuration.yaml
+  code-config:
+    enabled: true
+    type: persistentVolumeClaim
+    size: 1Gi
+    storageClass: local-path
+    accessMode: ReadWriteOnce
+    globalMounts: []
+    advancedMounts:
+      code: #controller
+        main:
+        - path: /config
+  #! uncomment below if you want bluetooth (needs bluetoothctl/bluez & dbus-broker on host)
+  # ~ what's mentioned here in regards to the container setup https://www.home-assistant.io/integrations/bluetooth/#requirements-for-linux-systems
+  # bluetooth:
+  #   enabled: true
+  #   type: hostPath
+  #   hostPath: /var/run/dbus
+  #   globalMounts: []
+  #   advancedMounts:
+  #     main: #controller
+  #       main: #container
+  #       - path: /run/dbus
+  #         readOnly: true
+
+service:
+  main:
+    ports:
+      http:
+        port: 8123
+  code:
+    controller: code
+    ports:
+      http:
+        port: 8443
+ingress:
+  main:
+    enabled: true
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.tls: "true"
+      gethomepage.dev/enabled: "true"
+      gethomepage.dev/group: HASS
+      gethomepage.dev/name: "home-assistant"
+      gethomepage.dev/icon: "home-assistant.png"
+    hosts:
+    - host: "hass.<domain>"
+      paths:
+      - path: /
+        pathType: Prefix
+        service:
+          name: main
+          port: http
+  code:
+    enabled: true
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.tls: "true"
+      gethomepage.dev/enabled: "true"
+      gethomepage.dev/group: HASS
+      gethomepage.dev/name: "HASS Code Server"
+      gethomepage.dev/icon: "code-server.png"
+    hosts:
+    - host: "hass-code.<domain>"
+      paths:
+      - path: /
+        pathType: Prefix
+        service:
+          name: code
+          port: http

@@ -1,0 +1,24 @@
+persistence:
+  enabled: true
+  storageClass: local-path
+  size: 5Gi
+
+auth:
+  existingSecret: influx-auth
+  admin:
+    username: admin
+  user:
+    username: hass
+    org: home-assistant
+    bucket: home-assistant
+
+ingress:
+  enabled: true
+  hostname: hass-influxdb.<domain>
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/group: HASS
+    gethomepage.dev/name: "HASS InfluxDB"
+    gethomepage.dev/icon: "influxdb.png"
